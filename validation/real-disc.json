@@ -1,0 +1,53 @@
+{
+  "status": "passed",
+  "finished_utc": "2026-10-18T04:12:56.286508+00:00",
+  "program_sha256": "d0a7a46c7fb66cab071ad5bce15cd02b366774f1a1b4ae391e9522e655ecf9ad",
+  "drive": {
+    "vendor": "HL-DT-ST",
+    "model": "BD-RE WP50NB40",
+    "firmware": "1.03"
+  },
+  "media_before": {
+    "profile": 65,
+    "description": "BD-R SRM",
+    "status": "blank",
+    "media_id": "VERBAT/IMe",
+    "free_blocks": 12219392,
+    "next_writable": 0,
+    "unformatted_blocks": 12219392,
+    "block_bytes": 2048,
+    "speeds": [
+      2.0,
+      4.0,
+      6.0
+    ]
+  },
+  "recording": {
+    "filesystem": "ISO 9660 level 3 + Rock Ridge + Joliet",
+    "preformatted": false,
+    "requested_speed_x": 4.0,
+    "image_bytes": 24476250112,
+    "writer_exit_code": 0,
+    "final_state": "closed, one session",
+    "readable_blocks": 11951456,
+    "block_bytes": 2048
+  },
+  "reload": {
+    "ejected": true,
+    "tray_closed_manually": true,
+    "verification_resumed_without_rewriting": true
+  },
+  "verification": {
+    "source": "optical block device after media reload",
+    "method": "complete file readback with SHA-256; exact paths, sizes and directory sets in Rock Ridge and Joliet",
+    "files": 3208,
+    "directories": 14,
+    "bytes": 24471949900,
+    "read_errors": 0,
+    "mismatches": 0,
+    "namespace_differences": 0,
+    "started_utc": "2026-10-18T03:52:07.644333+00:00",
+    "finished_utc": "2026-10-18T04:12:56.261216+00:00"
+  },
+  "privacy": "Source paths, volume label, filenames, content hashes, device serial and detailed logs omitted."
+}

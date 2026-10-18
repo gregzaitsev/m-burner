@@ -1,0 +1,31 @@
+{
+  "status": "passed_including_real_disc_write_and_full_readback",
+  "checked_at": "2026-10-17T22:09:25.308399+00:00",
+  "unit_and_iso_integration_tests": {
+    "passed": 23,
+    "skipped": 0,
+    "includes_file_over_4_GiB": true
+  },
+  "installer": {
+    "environment": "Ubuntu 24.04 Docker container; repository mounted read-only",
+    "result": "passed",
+    "pip_check": "passed",
+    "cli_help": "passed"
+  },
+  "real_drive_capacity_guard": {
+    "model": "HL-DT-ST BD-RE WP50NB40",
+    "firmware": "1.03",
+    "media": "blank unformatted BD-R SRM VERBAT/IMe",
+    "capacity_bytes": 25025314816,
+    "image_bytes": 25237753856,
+    "required_margin_bytes": 2097152,
+    "shortfall_bytes": 214536192,
+    "outcome": "refused before hashing/image creation/write; no optical mutation"
+  },
+  "real_write_and_full_readback": "passed; see real-disc.json",
+  "source_sha256": {
+    "m_burner.py": "d0a7a46c7fb66cab071ad5bce15cd02b366774f1a1b4ae391e9522e655ecf9ad",
+    "install.sh": "ade1d7fca535b286a7afa1475086ba9fd3635e113ac3ed49348bd1bd3b6fa6cd",
+    "requirements.txt": "bd1b02f5454020a289578acecc00c14689e7dfc1d1eaf3a865283339667a3dec"
+  }
+}
