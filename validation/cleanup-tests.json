@@ -1,0 +1,20 @@
+{
+  "checked_at": "2026-10-19T16:03:16.799168+00:00",
+  "environment": "Ubuntu 24.04 Docker container; repository mounted read-only; install.sh completed",
+  "program_sha256": "250d64c7b9e9d011cb3f61de650674a8fd091ff3f8ae860aeb43ae219e2400fe",
+  "tests": {
+    "run": 29,
+    "passed": 28,
+    "skipped": 1,
+    "skip_reason": "Optional >4 GiB ISO test not enabled; recording/image format unchanged"
+  },
+  "cleanup_coverage": [
+    "success removes only known image/log files",
+    "failed and incomplete verification retains artifacts",
+    "source and unrelated files preserved",
+    "symlinks not followed",
+    "interrupted cleanup resumes without image or optical drive",
+    "completed cleanup resume does not write or reverify"
+  ],
+  "hardware_validation": "No new optical write performed for this cleanup change. real-disc.json records the earlier version identified by its program hash."
+}

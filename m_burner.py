@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Blank BD-R -> verified ISO -> closed disc -> full SHA-256 verification.
 
-Never formats, blanks, overwrites, resumes a failed write, or removes artifacts.
+Never formats, blanks, overwrites, or resumes a failed write.
+Images and diagnostic logs are removed only after successful full verification.
 The resume operation only reads a successfully written disc.
 """
 import argparse
@@ -490,6 +491,50 @@ def wait_reload(run, device, timeout):
     save(run.path / 'reload-confirmed.json', {'time': utc(), 'disc_ready': True})
 
 
+# Explicit filenames only: never recursively remove a run or unrelated files.
+CLEANUP_FILES = (
+    'image.iso', 'image.iso.sha256', 'commands.jsonl', 'image-files.jsonl',
+    'disc-files.jsonl',
+) + tuple(name + '.log' for name in (
+    'kernel-before', 'kernel-after-write', 'kernel-final', 'media-before',
+    'media-before-toc', 'prewrite-media', 'prewrite-media-toc', 'image-size',
+    'build-image', 'write', 'failed-media', 'mount-status', 'unmount',
+    'eject', 'reload', 'disc-media', 'disc-toc',
+))
+
+
+def cleanup_verified(run):
+    """Remove only this run's image/logs after durable verification evidence."""
+    result = load(run.path / 'result.json')
+    report = load(run.path / 'disc-report.json')
+    if (run.state.get('phase') != 'verified' or result.get('success') is not True
+            or report.get('success') is not True):
+        raise BurnError('Удаление разрешено только после полной успешной проверки.')
+    cfg = load(run.path / 'config.json')
+    validate_workdir(run.path, Path(cfg['source']))
+    run.phase('verified', cleanup_started=True)
+    removed, errors = [], []
+    for name in CLEANUP_FILES:
+        path = run.path / name
+        try:
+            if not stat.S_ISREG(path.lstat().st_mode):
+                raise OSError('Not a regular file; left untouched')
+            path.unlink()
+            removed.append(name)
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            errors.append({'file': name, 'error': str(error)})
+    result['cleanup'] = {'finished': utc(), 'removed': removed, 'errors': errors}
+    save(run.path / 'result.json', result)
+    run.phase('verified', cleanup_complete=not errors)
+    with (run.path / 'REPORT.txt').open('a', encoding='utf-8') as f:
+        f.write('Образ и журналы удалены после полной проверки.\n' if not errors else
+                'Не все артефакты удалены; ошибки очистки: см. result.json.\n')
+    if errors:
+        print('ВНИМАНИЕ: диск проверен, но часть файлов не удалена; см. result.json.', flush=True)
+
+
 def verify_disc(run, timeout):
     ensure_no_writer()
     save(run.path / 'result.json', {'success': False, 'status': 'verification_pending', 'time': utc()})
@@ -546,7 +591,8 @@ def verify_disc(run, timeout):
         'Rock Ridge и Joliet проверены, пропущенных и лишних файлов/папок нет.\n'
         f"Скорость записи: {cfg['speed']}x. Предварительное форматирование не выполнялось.\n"
         f"Образ: {image}\nSHA-256: {cfg['image_sha256']}\n"
-        'Все образы, манифесты и журналы сохранены. Исходники не изменялись.\n', encoding='utf-8')
+        'Манифест и итоговые отчёты сохранены. Исходники не изменялись.\n', encoding='utf-8')
+    cleanup_verified(run)
     print(f"\nУСПЕХ: {summary['files']} файлов, {summary['bytes']:,} байт. Ошибок: 0. Отчёт: {run.path / 'REPORT.txt'}", flush=True)
 
 
@@ -645,6 +691,16 @@ def main(argv=None):
             if args.source or args.label or args.device or args.prepare_only or args.check_only:
                 raise BurnError('--resume нельзя сочетать с выбором новой папки/метки/привода или режимом подготовки.')
             directory = args.resume.expanduser().resolve(strict=True)
+            saved_state = load(directory / 'state.json')
+            if saved_state.get('phase') == 'verified' and saved_state.get('cleanup_started'):
+                run = Run(directory)
+                cfg = load(directory / 'config.json')
+                validate_workdir(directory, Path(cfg['source']), args.protect_root)
+                if not saved_state.get('cleanup_complete'):
+                    cleanup_verified(run)
+                print('Этот диск уже полностью проверен. '
+                      f'Отчёт: {directory / "REPORT.txt"}', flush=True)
+                return 0 if run.state.get('cleanup_complete') else 1
             run = Run(directory)
             cfg = load(directory / 'config.json')
             validate_workdir(directory, Path(cfg['source']), args.protect_root)
@@ -676,6 +732,10 @@ def main(argv=None):
         print(f'\n{error}', file=sys.stderr, flush=True)
         return 75
     except (Exception, KeyboardInterrupt) as error:
+        if run and run.state.get('phase') == 'verified' and run.state.get('cleanup_started'):
+            print(f'Диск полностью проверен, но очистка не завершена: {error}. '
+                  f'Повторить очистку: m-burner --resume {run.path}', file=sys.stderr, flush=True)
+            return 1
         if run:
             old = run.state.get('phase')
             if old not in ['writing', 'write_failed']:

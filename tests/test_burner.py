@@ -168,6 +168,102 @@ class SafetyTests(unittest.TestCase):
             self.assertFalse(burner.load(path / 'result.json')['success'])
 
 
+class CleanupTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='m-burner-cleanup-test-')
+        self.root = Path(self.temp.name)
+        self.path = self.root / 'run'
+        self.path.mkdir()
+        self.source = self.root / 'source'
+        self.source.mkdir()
+        (self.source / 'original').write_bytes(b'keep source')
+        self.run = burner.Run(self.path)
+        self.run.phase('verified')
+        burner.save(self.path / 'config.json', {'source': str(self.source)})
+        burner.save(self.path / 'result.json', {'success': True})
+        burner.save(self.path / 'disc-report.json', {'success': True})
+        (self.path / 'REPORT.txt').write_text('Verified\n')
+        for name in burner.CLEANUP_FILES:
+            (self.path / name).write_bytes(b'artifact')
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_success_deletes_only_known_image_and_logs(self):
+        (self.path / 'manifest.json').write_text('{}')
+        (self.path / 'unrelated.log').write_text('keep')
+        sibling = self.root / 'other-run'
+        sibling.mkdir()
+        (sibling / 'image.iso').write_bytes(b'keep')
+        burner.cleanup_verified(self.run)
+        self.assertTrue(all(not (self.path / n).exists() for n in burner.CLEANUP_FILES))
+        for name in ['manifest.json', 'REPORT.txt', 'disc-report.json', 'unrelated.log']:
+            self.assertTrue((self.path / name).exists())
+        self.assertEqual((self.source / 'original').read_bytes(), b'keep source')
+        self.assertEqual((sibling / 'image.iso').read_bytes(), b'keep')
+        self.assertTrue(burner.load(self.path / 'result.json')['success'])
+        self.assertTrue(self.run.state['cleanup_complete'])
+        burner.cleanup_verified(self.run)  # idempotent
+
+    def test_incomplete_and_failed_runs_keep_every_artifact(self):
+        for phase in ['prepared', 'writing', 'write_failed', 'awaiting_reload', 'verification_failed']:
+            self.run.phase(phase)
+            with self.assertRaises(burner.BurnError):
+                burner.cleanup_verified(self.run)
+            self.assertTrue(all((self.path / n).exists() for n in burner.CLEANUP_FILES))
+        self.run.phase('verified')
+        burner.save(self.path / 'disc-report.json', {'success': False})
+        with self.assertRaises(burner.BurnError):
+            burner.cleanup_verified(self.run)
+        self.assertTrue((self.path / 'image.iso').exists())
+
+    def test_cleanup_does_not_follow_links_and_reports_errors(self):
+        image = self.path / 'image.iso'
+        image.unlink()
+        image.symlink_to(self.source / 'original')
+        burner.cleanup_verified(self.run)
+        self.assertTrue(image.is_symlink())
+        self.assertEqual((self.source / 'original').read_bytes(), b'keep source')
+        result = burner.load(self.path / 'result.json')
+        self.assertTrue(result['success'])
+        self.assertEqual(result['cleanup']['errors'][0]['file'], 'image.iso')
+        self.assertFalse(self.run.state['cleanup_complete'])
+
+    def test_interrupted_cleanup_can_resume_without_image_or_drive(self):
+        original = Path.unlink
+        def interrupt(path, *args, **kwargs):
+            if path.name == 'image.iso.sha256':
+                raise KeyboardInterrupt()
+            return original(path, *args, **kwargs)
+        with patch.object(Path, 'unlink', interrupt), self.assertRaises(KeyboardInterrupt):
+            burner.cleanup_verified(self.run)
+        self.assertFalse((self.path / 'image.iso').exists())
+        self.assertTrue(burner.load(self.path / 'result.json')['success'])
+        with patch.object(burner.os, 'geteuid', return_value=1000), \
+                patch.object(burner.shutil, 'which', return_value='/test/tool'), \
+                patch.object(burner, 'verify_disc') as verify:
+            self.assertEqual(burner.main(['--resume', str(self.path)]), 0)
+        verify.assert_not_called()
+        self.assertTrue(burner.load(self.path / 'state.json')['cleanup_complete'])
+
+    def test_source_directory_cannot_be_cleaned(self):
+        burner.save(self.path / 'config.json', {'source': str(self.root)})
+        with self.assertRaises(burner.BurnError):
+            burner.cleanup_verified(self.run)
+        self.assertTrue((self.path / 'image.iso').exists())
+
+    def test_resume_cleaned_run_does_not_write_or_reverify(self):
+        burner.cleanup_verified(self.run)
+        with patch.object(burner.os, 'geteuid', return_value=1000), \
+                patch.object(burner.shutil, 'which', return_value='/test/tool'), \
+                patch.object(burner, 'verify_disc') as verify, \
+                patch.object(burner, 'burn') as burn:
+            self.assertEqual(burner.main(['--resume', str(self.path)]), 0)
+        verify.assert_not_called()
+        burn.assert_not_called()
+        self.assertTrue(burner.load(self.path / 'result.json')['success'])
+
+
 @unittest.skipUnless(shutil.which('xorriso'), 'xorriso is required for ISO integration tests')
 class ImageTests(unittest.TestCase):
     def setUp(self):

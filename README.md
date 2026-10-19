@@ -54,7 +54,7 @@ m-burner --work-dir /mnt/staging/m-burner --protect-root /path/to/protected-data
 
 The working directory cannot be inside the source directory or any `--protect-root`, including through symbolic links. Repeat `--protect-root` to protect additional trees. The working filesystem must have room for the complete image plus at least 1 GiB. Existing files are never deleted to free space.
 
-Artifacts include `image.iso`, `image.iso.sha256`, `manifest.json`, `config.json`, `state.json`, executed commands, write logs, media information, verification reports, and per-file hash results. A successful run produces `result.json` with `success: true` and a human-readable `REPORT.txt`. Artifacts are not automatically deleted.
+Artifacts include `image.iso`, `image.iso.sha256`, `manifest.json`, `config.json`, `state.json`, executed commands, write logs, media information, verification reports, and per-file hash results. A successful run produces `result.json` with `success: true` and a human-readable `REPORT.txt`. After successful full disc verification, the image, its checksum sidecar, command logs, diagnostic logs, and per-file verification logs are automatically deleted. The manifest, metadata, and final reports remain as a compact record. Cleanup only targets known filenames in the current run directory; it never removes source files or other runs. Cleanup errors are listed in `result.json` and reported without changing the successful disc verification result. On write/read/verification failure, interruption, or reload timeout, artifacts are retained. Preparation-only runs also retain their image.
 
 Source files are only read, including hidden files. Normal reads may update access times through the operating system. Symbolic links and special files are rejected explicitly rather than silently skipped. If Joliet cannot represent names exactly, or the image changes any names, preparation fails **before writing**. Files larger than 4 GiB use ISO level 3 multi-extent records; older readers without that support may not read them.
 
@@ -66,7 +66,7 @@ If the disc is not reloaded within 300 seconds, the program exits with code **75
 m-burner --resume /path/to/run
 ```
 
-Resume performs **verification only**, never another write. It requires a recorded successful write result. An interruption during recording requires separate diagnosis; automatic continuation is prohibited. Verification failures never trigger rewriting.
+Resume performs **verification only**, never another write. For a run already verified and cleaned, it displays the existing report location without rereading or rewriting the disc. If cleanup was interrupted or incomplete, it retries only cleanup. It requires a recorded successful write result. An interruption during recording requires separate diagnosis; automatic continuation is prohibited. Verification failures never trigger rewriting.
 
 Set a different reload timeout with `--reload-timeout 600`.
 
