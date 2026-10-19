@@ -53,6 +53,9 @@ python3 -m venv "$dest/venv"
 install -m 0644 "$src/m_burner.py" "$dest/m_burner.py"
 install -m 0644 "$src/requirements.txt" "$dest/requirements.txt"
 install -m 0644 "$src/README.md" "$dest/README.md"
+install -m 0644 "$src/LICENSE" "$dest/LICENSE"
+install -d -m 0755 "$dest/doc"
+install -m 0644 "$src/doc/README.md" "$dest/doc/README.md"
 cat > "$dest/launcher" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
