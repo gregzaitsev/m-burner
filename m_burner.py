@@ -250,9 +250,30 @@ def ensure_no_writer():
                             'Wait for it to finish and close the other recording program.')
 
 
-def probe_blank(run, device, name):
-    ensure_no_writer()
-    _, text = run.command(name, ['dvd+rw-mediainfo', device])
+def probe_blank(run, device, name, wait_ready=False):
+    waiting_announced = False
+    while True:
+        ensure_no_writer()
+        if wait_ready and not drive_ready(device):
+            if not Path(device).exists():
+                raise BurnError(f'Optical drive disconnected: {device}')
+        else:
+            code, text = run.command(name, ['dvd+rw-mediainfo', device], check=False)
+            if code == 0:
+                break
+            # The kernel may report ready before the drive finishes recognizing
+            # newly inserted media. Retry only this specific read-only condition.
+            if not (wait_ready and 'no media mounted, exiting...' in text):
+                raise BurnError(f'{name}: exit code {code}; see {run.path / (name + ".log")}\n{text[-1500:]}')
+            with (run.path / 'media-wait.log').open('a', encoding='utf-8') as log:
+                log.write(f'{utc()}\n{text}\n')
+        if not waiting_announced:
+            print('Waiting for the drive to recognize the disc. Insert a disc and close the tray; '
+                  'continuing automatically when ready. Press Ctrl+C to cancel.', flush=True)
+            waiting_announced = True
+        time.sleep(2)
+    if waiting_announced:
+        print('Disc detected. Checking media type and capacity...', flush=True)
     m = parse_medium(text)
     save(run.path / (name + '.json'), m)
     require_blank(m)
@@ -512,7 +533,7 @@ CLEANUP_FILES = (
     'kernel-before', 'kernel-after-write', 'kernel-final', 'media-before',
     'media-before-toc', 'prewrite-media', 'prewrite-media-toc', 'image-size',
     'build-image', 'write', 'failed-media', 'mount-status', 'unmount',
-    'eject', 'reload', 'disc-media', 'disc-toc',
+    'eject', 'reload', 'disc-media', 'disc-toc', 'media-wait',
 ))
 
 
@@ -616,7 +637,7 @@ def prepare_and_burn(args, run, identity):
         raise BurnError('Source path must be a directory.')
     run.phase('diagnostics', source=str(source), label=label, started=utc())
     capture_kernel(run, 'kernel-before')
-    medium = probe_blank(run, identity['device'], 'media-before')
+    medium = probe_blank(run, identity['device'], 'media-before', wait_ready=True)
     inventory = snapshot(source)
     save(run.path / 'inventory.json', inventory)
     size = image_size(run, source, label)

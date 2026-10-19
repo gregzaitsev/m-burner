@@ -49,6 +49,38 @@ class SafetyTests(unittest.TestCase):
                 burner.wait_reload(run, '/dev/sr0', 600)
             self.assertFalse((Path(tmp) / 'reload-confirmed.json').exists())
 
+    def test_initial_media_waits_for_recognition_and_transient_no_media(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = burner.Run(tmp)
+            device = Path(tmp) / 'device'
+            device.touch()
+            toc = 'Media status : is blank\nMedia blocks : 0 readable , 12219392 writable , 12219392 overall'
+            with patch.object(burner, 'ensure_no_writer'), \
+                    patch.object(burner, 'drive_ready', side_effect=[False, True, True]), \
+                    patch.object(burner.time, 'sleep') as sleep, \
+                    patch.object(run, 'command', side_effect=[
+                        (251, ':-( no media mounted, exiting...'), (0, BLANK), (0, toc)
+                    ]) as command:
+                medium = burner.probe_blank(run, str(device), 'media-before', wait_ready=True)
+            self.assertEqual(medium['free_blocks'], 12219392)
+            self.assertEqual(sleep.call_count, 2)
+            self.assertEqual(command.call_count, 3)
+            self.assertIn('no media mounted', (Path(tmp) / 'media-wait.log').read_text())
+
+    def test_other_diagnostic_errors_and_prewrite_no_media_are_not_retried(self):
+        for wait_ready, message in [(True, 'Input/output error'),
+                                    (False, ':-( no media mounted, exiting...')]:
+            with self.subTest(wait_ready=wait_ready), tempfile.TemporaryDirectory() as tmp:
+                run = burner.Run(tmp)
+                with patch.object(burner, 'ensure_no_writer'), \
+                        patch.object(burner, 'drive_ready', return_value=True), \
+                        patch.object(burner.time, 'sleep') as sleep, \
+                        patch.object(run, 'command', return_value=(251, message)) as command, \
+                        self.assertRaises(burner.BurnError):
+                    burner.probe_blank(run, '/dev/sr0', 'probe', wait_ready=wait_ready)
+                command.assert_called_once()
+                sleep.assert_not_called()
+
     def test_exact_capacity_rejects_original_disk4(self):
         medium = burner.parse_medium(BLANK)
         burner.require_blank(medium)

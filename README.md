@@ -25,7 +25,7 @@ Add `--yes` to skip the final write confirmation when the operation is already a
 
 ## Workflow
 
-1. Confirm that the selected device is an optical drive and contains a blank, unformatted BD-R SRM. `dvd+rw-mediainfo` and `xorriso` must agree on the exact number of available 2048-byte blocks.
+1. Wait for the drive to recognize newly inserted media, then continue automatically. This initial wait has no timeout; Ctrl+C cancels it. Only a transient “no media mounted” response is retried; other diagnostic errors still stop the run. Confirm that the selected device is an optical drive and contains a blank, unformatted BD-R SRM. `dvd+rw-mediainfo` and `xorriso` must agree on the exact number of available 2048-byte blocks.
 2. Calculate the image size using `xorriso -as mkisofs -print-size`. The filesystem is **ISO 9660 level 3 + Rock Ridge + Joliet**, with the source directory's contents at the disc root. The image plus a 2 MiB padding/alignment allowance must fit. Insufficient capacity stops the run before writing.
 3. Read all source files and save a SHA-256 manifest. Build the image, verify both filename trees and their data mappings, and check every file's hash. Source changes during preparation stop the run.
 4. Recheck drive identity and blank media, then write with `xorriso` and close the disc. A supported 4x speed is preferred; `--speed` selects another supported speed. Live output includes progress, FIFO and drive buffer levels, actual write speed, and estimated time remaining. ETA is approximate; drive messages are shown during finalization.
