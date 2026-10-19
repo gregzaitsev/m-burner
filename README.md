@@ -60,7 +60,7 @@ Source files are only read, including hidden files. Normal reads may update acce
 
 ## Resume verification
 
-If the disc is not reloaded within 300 seconds, the program exits with code **75** and preserves its state. Close the tray and run:
+By default, the program waits indefinitely for the recorded disc to be reloaded, then automatically starts verification. If an explicitly configured timeout expires, it exits with code **75** and preserves its state. To continue afterward, close the tray and run:
 
 ```bash
 m-burner --resume /path/to/run
@@ -68,7 +68,7 @@ m-burner --resume /path/to/run
 
 Resume performs **verification only**, never another write. For a run already verified and cleaned, it displays the existing report location without rereading or rewriting the disc. If cleanup was interrupted or incomplete, it retries only cleanup. It requires a recorded successful write result. An interruption during recording requires separate diagnosis; automatic continuation is prohibited. Verification failures never trigger rewriting.
 
-Set a different reload timeout with `--reload-timeout 600`.
+To limit the wait to 600 seconds, use `--reload-timeout 600`. Use `--reload-timeout 0` for indefinite waiting (the default).
 
 ## Preparation and capacity checks
 

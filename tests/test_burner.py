@@ -29,6 +29,26 @@ unformatted: 12219392*2048=25025314816
 
 
 class SafetyTests(unittest.TestCase):
+    def test_reload_waits_indefinitely_by_default(self):
+        self.assertEqual(burner.parser().parse_args([]).reload_timeout, 0)
+        with tempfile.TemporaryDirectory() as tmp:
+            run = burner.Run(tmp)
+            with patch.object(burner, 'drive_ready', side_effect=[False, False, True]), \
+                    patch.object(burner.time, 'sleep') as sleep, \
+                    patch.object(burner.time, 'monotonic', return_value=10**12):
+                burner.wait_reload(run, '/dev/sr0', 0)
+            self.assertEqual(sleep.call_count, 2)
+            self.assertTrue(burner.load(Path(tmp) / 'reload-confirmed.json')['disc_ready'])
+
+    def test_explicit_reload_timeout_still_expires(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = burner.Run(tmp)
+            with patch.object(burner, 'drive_ready', return_value=False), \
+                    patch.object(burner.time, 'monotonic', side_effect=[100, 701]), \
+                    self.assertRaises(burner.AwaitingReload):
+                burner.wait_reload(run, '/dev/sr0', 600)
+            self.assertFalse((Path(tmp) / 'reload-confirmed.json').exists())
+
     def test_exact_capacity_rejects_original_disk4(self):
         medium = burner.parse_medium(BLANK)
         burner.require_blank(medium)

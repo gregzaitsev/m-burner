@@ -487,9 +487,9 @@ def drive_ready(device):
 
 def wait_reload(run, device, timeout):
     print('\nClose the tray with the recorded disc. Reloading will be detected automatically.', flush=True)
-    deadline = time.monotonic() + timeout
+    deadline = time.monotonic() + timeout if timeout else None
     while not drive_ready(device):
-        if time.monotonic() >= deadline:
+        if deadline is not None and time.monotonic() >= deadline:
             raise AwaitingReload(f'Waiting for disc reload. Resume with: m-burner --resume {run.path}')
         time.sleep(2)
     save(run.path / 'reload-confirmed.json', {'time': utc(), 'disc_ready': True})
@@ -672,7 +672,7 @@ def parser():
     mode.add_argument('--prepare-only', action='store_true', help='Prepare and verify an image without recording')
     mode.add_argument('--check-only', action='store_true', help='Check media and capacity without creating an image')
     p.add_argument('--resume', type=Path, help='Resume verification ONLY of a previously recorded disc')
-    p.add_argument('--reload-timeout', type=int, default=300, help='Seconds to wait for the tray to be closed manually')
+    p.add_argument('--reload-timeout', type=int, default=0, help='Seconds to wait for disc reload; 0 waits indefinitely (default)')
     return p
 
 
