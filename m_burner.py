@@ -430,6 +430,10 @@ WRITE_HEARTBEAT = re.compile(
     r'xorriso : UPDATE : Thank you for being patient\. Working since \d+ seconds\.'
 )
 
+WRITE_FINALIZING = re.compile(
+    r'xorriso : UPDATE : Closing track/session\. Working since \d+ seconds\.?'
+)
+
 
 def burn(run, device, image, speed):
     args = ['xorriso', '-no_rc', '-as', 'cdrecord', '-v', 'dev=' + device,
@@ -437,6 +441,7 @@ def burn(run, device, image, speed):
     save(run.path / 'write-command.json', args)
     run.phase('writing')
     progress = Progress('Writing', image.stat().st_size + PAD)
+    finalizing_announced = False
     def protected_signal(signum, frame):
         print('\nWriting is in progress; the signal was not forwarded to the drive. Wait for completion.', flush=True)
     previous = {s: signal.signal(s, protected_signal) for s in [signal.SIGINT, signal.SIGTERM]}
@@ -453,6 +458,10 @@ def burn(run, device, image, speed):
                     progress.total = int(match[2]) * 1024 * 1024
                     progress.update(int(match[1]) * 1024 * 1024,
                                     f'FIFO {match[3]}% | drive buffer {match[4]}% | {match[5]}x')
+                elif WRITE_FINALIZING.fullmatch(line.strip()):
+                    if not finalizing_announced:
+                        print('\nFinalizing disc...', flush=True)
+                        finalizing_announced = True
                 elif not WRITE_HEARTBEAT.fullmatch(line.strip()):
                     print(line.rstrip(), flush=True)
             code = process.wait()
