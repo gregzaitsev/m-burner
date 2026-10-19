@@ -426,6 +426,10 @@ def verify_iso(run, image, manifest, tag):
 
 WRITE_PROGRESS = re.compile(r'(\d+) of (\d+) MB written \(fifo\s*(\d+)%\) \[buf\s*(\d+)%\]\s*([\d.]+)x')
 
+WRITE_HEARTBEAT = re.compile(
+    r'xorriso : UPDATE : Thank you for being patient\. Working since \d+ seconds\.'
+)
+
 
 def burn(run, device, image, speed):
     args = ['xorriso', '-no_rc', '-as', 'cdrecord', '-v', 'dev=' + device,
@@ -449,7 +453,7 @@ def burn(run, device, image, speed):
                     progress.total = int(match[2]) * 1024 * 1024
                     progress.update(int(match[1]) * 1024 * 1024,
                                     f'FIFO {match[3]}% | drive buffer {match[4]}% | {match[5]}x')
-                else:
+                elif not WRITE_HEARTBEAT.fullmatch(line.strip()):
                     print(line.rstrip(), flush=True)
             code = process.wait()
     finally:
