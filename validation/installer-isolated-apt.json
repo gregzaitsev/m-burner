@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-10-19T16:06:50.557730+00:00",
+  "environment": "Disposable Ubuntu 24.04 container; repository mounted read-only",
+  "install_sha256": "98dcb62e6264afc8194df14996bb8a03975ea7b2b4867b9c0a1ce31bbba4275e",
+  "baseline": "Ordinary apt-get update fails with injected broken third-party source",
+  "result": "passed",
+  "checks": [
+    "install.sh succeeds with the broken source still configured",
+    "all original /etc/apt files retain their hashes",
+    "m-burner --help succeeds",
+    "pip check succeeds",
+    "temporary installer APT directory removed"
+  ],
+  "host_installation": "Not performed; requires user sudo password"
+}

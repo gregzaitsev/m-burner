@@ -11,7 +11,7 @@ sudo bash install.sh
 m-burner
 ```
 
-The installer installs system dependencies through `apt-get`, creates `/opt/m-burner/venv`, installs a pinned, hash-verified version of `pycdlib`, and provides `/usr/local/bin/m-burner`. It does not perform a full OS upgrade, update drive firmware, or change user groups.
+The installer installs system dependencies through `apt-get` using temporary official distribution sources and isolated package indexes (so broken third-party PPAs do not block installation), creates `/opt/m-burner/venv`, installs a pinned, hash-verified version of `pycdlib`, and provides `/usr/local/bin/m-burner`. Package signatures remain mandatory. Temporary APT sources and indexes are removed on exit; system repository configuration is unchanged. It does not perform a full OS upgrade, update drive firmware, or change user groups.
 
 **Run the burner without sudo.** Your user must have read/write access to the optical device, usually through the `cdrom` group.
 
