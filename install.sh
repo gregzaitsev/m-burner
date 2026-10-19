@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export LC_ALL=C.UTF-8
 if [[ ${EUID} -ne 0 ]]; then
-  echo 'Запустите: sudo bash install.sh' >&2
+  echo 'Run: sudo bash install.sh' >&2
   exit 1
 fi
-command -v apt-get >/dev/null || { echo 'Поддерживаются Debian/Ubuntu с apt-get.' >&2; exit 1; }
+command -v apt-get >/dev/null || { echo 'Debian/Ubuntu with apt-get is required.' >&2; exit 1; }
 src=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dest=/opt/m-burner
 # Use isolated official sources and package indexes. A broken unrelated PPA
@@ -58,5 +59,5 @@ set -euo pipefail
 exec /opt/m-burner/venv/bin/python /opt/m-burner/m_burner.py "$@"
 EOF
 install -m 0755 "$dest/launcher" /usr/local/bin/m-burner
-echo 'Готово. Запускайте m-burner от обычного пользователя, НЕ через sudo.'
-echo 'Пользователю нужен доступ на чтение и запись к оптическому /dev/srN.'
+echo 'Done. Run m-burner as a regular user, NOT through sudo.'
+echo 'Your user needs read/write access to the optical device /dev/srN.'

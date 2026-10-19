@@ -64,13 +64,13 @@ def validate_workdir(work, source, protected=()):
     work = Path(work).expanduser().resolve()
     for root in [source, *protected]:
         if within(work, Path(root).resolve()):
-            raise BurnError(f'Рабочая папка внутри защищённого дерева: {work}')
+            raise BurnError(f'Working directory is inside a protected tree: {work}')
     return work
 
 
 def validate_label(label):
     if not re.fullmatch(r'[A-Z0-9_]{1,32}', label):
-        raise BurnError('Метка: 1–32 символа A–Z, 0–9 или _, без пробелов.')
+        raise BurnError('Label: 1–32 characters A–Z, 0–9 or _, without spaces.')
     return label
 
 
@@ -91,7 +91,7 @@ def snapshot(root):
                               'ctime_ns': s.st_ctime_ns, 'inode': s.st_ino,
                               'device': s.st_dev}
             else:
-                raise BurnError(f'Ссылка или специальный файл не поддержан: {rel!r}; ничего не исключено.')
+                raise BurnError(f'Unsupported symlink or special file: {rel!r}; nothing has been silently excluded.')
     return {'files': dict(sorted(files.items())), 'directories': sorted(dirs)}
 
 
@@ -141,7 +141,7 @@ class Run:
         (self.path / (name + '.log')).write_bytes(p.stdout)
         text = p.stdout.decode('utf-8', errors='replace')
         if check and p.returncode:
-            raise BurnError(f'{name}: код {p.returncode}; см. {self.path / (name + ".log")}\n{text[-1500:]}')
+            raise BurnError(f'{name}: exit code {p.returncode}; see {self.path / (name + ".log")}\n{text[-1500:]}')
         return p.returncode, text
 
 
@@ -152,12 +152,12 @@ def capture_kernel(run, name):
 def drive_identity(device):
     dev = Path(device).resolve(strict=True)
     if not stat.S_ISBLK(dev.stat().st_mode):
-        raise BurnError(f'Не блочное устройство: {dev}')
+        raise BurnError(f'Not a block device: {dev}')
     sysdev = Path('/sys/class/block') / dev.name / 'device'
     if not sysdev.exists() or (sysdev / 'type').read_text().strip() != '5':
-        raise BurnError(f'Отказ: {dev} не оптический привод (SCSI type 5).')
+        raise BurnError(f'Refusing: {dev} is not an optical drive (SCSI type 5).')
     if not os.access(dev, os.R_OK | os.W_OK):
-        raise BurnError(f'Нет доступа к {dev}; запускайте от пользователя с правами на оптический привод.')
+        raise BurnError(f'Cannot access {dev}; run as a user with permission to access the optical drive.')
     identity = {'device': str(dev), 'sys_path': str(sysdev.resolve())}
     for key in ['vendor', 'model', 'rev']:
         identity[key] = (sysdev / key).read_text().strip()
@@ -173,13 +173,13 @@ def lock_drive(device):
     root.mkdir(mode=0o700, exist_ok=True)
     s = root.lstat()
     if not stat.S_ISDIR(s.st_mode) or s.st_uid != os.getuid() or s.st_mode & 0o077:
-        raise BurnError(f'Небезопасная папка блокировок: {root}')
+        raise BurnError(f'Unsafe lock directory: {root}')
     fd = os.open(root / (Path(device).name + '.lock'), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         os.close(fd)
-        raise BurnError('Другой экземпляр m-burner уже использует этот привод.') from None
+        raise BurnError('Another m-burner instance is already using this drive.') from None
     return fd
 
 
@@ -187,11 +187,11 @@ def parse_medium(text):
     def required(pattern, title):
         m = re.search(pattern, text, re.MULTILINE)
         if not m:
-            raise BurnError(f'Привод не сообщил {title}; запись запрещена.')
+            raise BurnError(f'Drive did not report {title}; writing is prohibited.')
         return m
-    profile = required(r'Mounted Media:\s+([0-9a-fA-F]+)h,([^\n]+)', 'профиль')
-    status = required(r'Disc status:\s+(\S+)', 'состояние').group(1)
-    media_id = required(r'Media ID:\s+([^\n]+)', 'идентификатор').group(1).strip()
+    profile = required(r'Mounted Media:\s+([0-9a-fA-F]+)h,([^\n]+)', 'media profile')
+    status = required(r'Disc status:\s+(\S+)', 'disc status').group(1)
+    media_id = required(r'Media ID:\s+([^\n]+)', 'media ID').group(1).strip()
     free = re.search(r'Free Blocks:\s+(\d+)\*2KB', text)
     nwa = re.search(r'Next Writable Address:\s+(\d+)\*2KB', text)
     raw = re.search(r'unformatted:\s+(\d+)\*(\d+)=(\d+)', text)
@@ -210,25 +210,25 @@ def require_blank(medium):
             or medium['next_writable'] != 0 or medium['block_bytes'] != BLOCK
             or not medium['free_blocks']
             or medium['free_blocks'] != medium['unformatted_blocks']):
-        raise BurnError('Нужна пустая НЕФОРМАТИРОВАННАЯ BD-R SRM с адресом записи 0. '
-                        'Форматирование, очистка и дозапись не выполняются.')
+        raise BurnError('A blank UNFORMATTED BD-R SRM with next writable address 0 is required. '
+                        'Formatting, blanking and appending are not supported.')
 
 
 def check_capacity(image_bytes, free_blocks):
     required = image_bytes + WRITE_MARGIN
     available = free_blocks * BLOCK
     if required > available:
-        raise BurnError(f'НЕ ПОМЕЩАЕТСЯ: образ {image_bytes:,} + резерв {WRITE_MARGIN:,} '
-                        f'> доступно {available:,} байт; дефицит {required - available:,} байт.')
+        raise BurnError(f'DOES NOT FIT: image {image_bytes:,} + reserve {WRITE_MARGIN:,} '
+                        f'> available {available:,} bytes; shortfall {required - available:,} bytes.')
     return available - required
 
 
 def select_speed(speeds, requested=None):
     if not speeds:
-        raise BurnError('Привод не сообщил поддерживаемые скорости.')
+        raise BurnError('Drive did not report supported write speeds.')
     if requested is not None:
         if requested not in speeds:
-            raise BurnError(f'Скорость {requested}x не поддержана: {speeds}')
+            raise BurnError(f'Speed {requested}x is unsupported: {speeds}')
         return requested
     if 4.0 in speeds:
         return 4.0
@@ -246,8 +246,8 @@ def ensure_no_writer():
         except (OSError, UnicodeError):
             continue
         if name in names:
-            raise BurnError(f'Уже запущен {name} (PID {proc.name}); его работа не прерывается. '
-                            'Дождитесь завершения и закройте другую программу записи.')
+            raise BurnError(f'{name} is already running (PID {proc.name}); it will not be interrupted. '
+                            'Wait for it to finish and close the other recording program.')
 
 
 def probe_blank(run, device, name):
@@ -259,7 +259,7 @@ def probe_blank(run, device, name):
     _, toc = run.command(name + '-toc', ['xorriso', '-no_rc', '-indev', device, '-toc'])
     counts = re.search(r'Media blocks\s*:\s*(\d+) readable\s*,\s*(\d+) writable\s*,\s*(\d+) overall', toc)
     if not counts or 'is blank' not in toc or int(counts[1]) != 0 or int(counts[2]) != m['free_blocks']:
-        raise BurnError('Сведения xorriso и привода о пустом носителе/ёмкости не согласуются.')
+        raise BurnError('xorriso and the drive disagree about blank media status or capacity.')
     return m
 
 
@@ -272,7 +272,7 @@ def image_size(run, source, label):
     _, output = run.command('image-size', iso_args(source, label) + ['-print-size', str(source)])
     numbers = re.findall(r'^\s*(\d+)\s*$', output, re.MULTILINE)
     if len(numbers) != 1:
-        raise BurnError('Не удалось однозначно определить размер ISO.')
+        raise BurnError('Could not unambiguously determine the ISO size.')
     return int(numbers[0]) * BLOCK
 
 
@@ -297,21 +297,21 @@ def hash_image(path, title, size):
 
 def make_manifest(source, inventory):
     total = sum(x['size'] for x in inventory['files'].values())
-    progress = Progress('Чтение исходников / SHA-256', total)
+    progress = Progress('Reading source files / SHA-256', total)
     done, files = 0, {}
     for rel, before in inventory['files'].items():
         digest, size = hash_file(source / rel, progress, done)
         s = (source / rel).stat()
         if (s.st_size, s.st_mtime_ns, s.st_ctime_ns, s.st_ino, s.st_dev) != tuple(
                 before[k] for k in ['size', 'mtime_ns', 'ctime_ns', 'inode', 'device']):
-            raise BurnError(f'Исходный файл изменился во время чтения: {rel!r}')
+            raise BurnError(f'Source file changed while being read: {rel!r}')
         if size != before['size']:
-            raise BurnError(f'Неполное чтение исходника: {rel!r}')
+            raise BurnError(f'Incomplete source file read: {rel!r}')
         files[rel] = {'size': size, 'sha256': digest}
         done += size
     progress.update(done, force=True)
     if snapshot(source) != inventory:
-        raise BurnError('Список или метаданные исходников изменились во время подготовки.')
+        raise BurnError('Source file list or metadata changed during preparation.')
     return {'files': files, 'directories': inventory['directories'], 'total_bytes': total}
 
 
@@ -319,7 +319,7 @@ def record_layout(record):
     segments, seen = [], set()
     while record is not None:
         if id(record) in seen:
-            raise BurnError('Циклическая цепочка multi-extent ISO.')
+            raise BurnError('Cycle detected in ISO multi-extent chain.')
         seen.add(id(record))
         segments.append((record.extent_location(), record.data_length))
         record = record.data_continuation
@@ -339,7 +339,7 @@ def iso_tree(iso, namespace):
             name = (record.rock_ridge.name().decode('utf-8') if namespace == 'rr'
                     else record.file_identifier().decode('utf-16-be'))
             if name in records:
-                raise BurnError(f'Повторяющийся путь в ISO: {name!r}')
+                raise BurnError(f'Duplicate path in ISO: {name!r}')
             records[name] = record
         for name in subdirs:
             dirs.append((directory.rstrip('/') + '/' + name).lstrip('/'))
@@ -347,7 +347,7 @@ def iso_tree(iso, namespace):
             path = directory.rstrip('/') + '/' + name
             rel = path.lstrip('/')
             if rel in files:
-                raise BurnError(f'Повторяющийся путь в ISO: {rel!r}')
+                raise BurnError(f'Duplicate path in ISO: {rel!r}')
             layout = record_layout(records[name])
             files[rel] = {'size': sum(n for _, n in layout), 'layout': layout}
     return files, sorted(dirs)
@@ -372,11 +372,11 @@ def verify_iso(run, image, manifest, tag):
                     'extra_dirs': sorted(set(dirs) - set(manifest['directories']))}
             report['namespaces'][ns] = diff
             if any(diff.values()):
-                raise BurnError(f'Имена, размеры или папки {ns} не совпадают; см. {tag}-report.json')
+                raise BurnError(f'Names, sizes or directories in {ns} do not match; see {tag}-report.json')
         # Same paths and physical extents mean one full read validates both namespaces.
         if trees['rr'] != trees['joliet']:
-            raise BurnError('Rock Ridge и Joliet ссылаются на разные данные.')
-        progress = Progress('Проверка ' + tag + ' / SHA-256', manifest['total_bytes'])
+            raise BurnError('Rock Ridge and Joliet reference different data.')
+        progress = Progress('Verifying ' + tag + ' / SHA-256', manifest['total_bytes'])
         with (run.path / (tag + '-files.jsonl')).open('w', encoding='utf-8') as logfile:
             for rel, meta in sorted(trees['rr'].items(), key=lambda x: x[1]['layout'][0][0]):
                 start = report['read_bytes']
@@ -420,7 +420,7 @@ def verify_iso(run, image, manifest, tag):
             report['finished'] = utc()
             save(run.path / (tag + '-report.json'), report)
     if not report['success']:
-        raise BurnError(f'Проверка {tag} НЕ пройдена; см. {tag}-report.json')
+        raise BurnError(f'Verification of {tag} FAILED; see {tag}-report.json')
     return report
 
 
@@ -432,9 +432,9 @@ def burn(run, device, image, speed):
             f'speed={speed:g}', 'fs=64m', f'padsize={PAD}', '-data', str(image)]
     save(run.path / 'write-command.json', args)
     run.phase('writing')
-    progress = Progress('Запись', image.stat().st_size + PAD)
+    progress = Progress('Writing', image.stat().st_size + PAD)
     def protected_signal(signum, frame):
-        print('\nЗапись уже идёт; сигнал не передан приводу. Дождитесь завершения.', flush=True)
+        print('\nWriting is in progress; the signal was not forwarded to the drive. Wait for completion.', flush=True)
     previous = {s: signal.signal(s, protected_signal) for s in [signal.SIGINT, signal.SIGTERM]}
     try:
         with (run.path / 'write.log').open('w', encoding='utf-8') as log:
@@ -448,7 +448,7 @@ def burn(run, device, image, speed):
                 if match:
                     progress.total = int(match[2]) * 1024 * 1024
                     progress.update(int(match[1]) * 1024 * 1024,
-                                    f'FIFO {match[3]}% | привод {match[4]}% | {match[5]}x')
+                                    f'FIFO {match[3]}% | drive buffer {match[4]}% | {match[5]}x')
                 else:
                     print(line.rstrip(), flush=True)
             code = process.wait()
@@ -460,7 +460,7 @@ def burn(run, device, image, speed):
     if code:
         run.phase('write_failed', writer_exit=code)
         run.command('failed-media', ['dvd+rw-mediainfo', device], check=False)
-        raise BurnError('Запись завершилась ошибкой. Автоматическая повторная запись/закрытие запрещены.')
+        raise BurnError('Writing failed. Automatic rewriting or finalization is prohibited.')
     run.phase('written', writer_exit=0)
 
 
@@ -482,11 +482,11 @@ def drive_ready(device):
 
 
 def wait_reload(run, device, timeout):
-    print('\nЗакройте лоток с записанным диском. Загрузка будет обнаружена автоматически.', flush=True)
+    print('\nClose the tray with the recorded disc. Reloading will be detected automatically.', flush=True)
     deadline = time.monotonic() + timeout
     while not drive_ready(device):
         if time.monotonic() >= deadline:
-            raise AwaitingReload(f'Ожидается загрузка диска. Продолжение: m-burner --resume {run.path}')
+            raise AwaitingReload(f'Waiting for disc reload. Resume with: m-burner --resume {run.path}')
         time.sleep(2)
     save(run.path / 'reload-confirmed.json', {'time': utc(), 'disc_ready': True})
 
@@ -509,7 +509,7 @@ def cleanup_verified(run):
     report = load(run.path / 'disc-report.json')
     if (run.state.get('phase') != 'verified' or result.get('success') is not True
             or report.get('success') is not True):
-        raise BurnError('Удаление разрешено только после полной успешной проверки.')
+        raise BurnError('Cleanup is allowed only after successful full verification.')
     cfg = load(run.path / 'config.json')
     validate_workdir(run.path, Path(cfg['source']))
     run.phase('verified', cleanup_started=True)
@@ -529,10 +529,10 @@ def cleanup_verified(run):
     save(run.path / 'result.json', result)
     run.phase('verified', cleanup_complete=not errors)
     with (run.path / 'REPORT.txt').open('a', encoding='utf-8') as f:
-        f.write('Образ и журналы удалены после полной проверки.\n' if not errors else
-                'Не все артефакты удалены; ошибки очистки: см. result.json.\n')
+        f.write('Image and logs removed after full verification.\n' if not errors else
+                'Some artifacts could not be removed; see cleanup errors in result.json.\n')
     if errors:
-        print('ВНИМАНИЕ: диск проверен, но часть файлов не удалена; см. result.json.', flush=True)
+        print('WARNING: disc verified, but some files could not be removed; see result.json.', flush=True)
 
 
 def verify_disc(run, timeout):
@@ -541,9 +541,9 @@ def verify_disc(run, timeout):
     cfg = load(run.path / 'config.json')
     device = cfg['identity']['device']
     if drive_identity(device) != cfg['identity']:
-        raise BurnError('Подключён другой привод; проверка остановлена.')
+        raise BurnError('A different drive is connected; verification stopped.')
     if load(run.path / 'write-result.json')['exit_code'] != 0:
-        raise BurnError('Возобновлять можно только проверку успешно завершённой записи.')
+        raise BurnError('Only verification of a successfully completed write can be resumed.')
     if run.state['phase'] == 'written':
         unmount(run, device)
         run.phase('awaiting_reload')
@@ -551,21 +551,21 @@ def verify_disc(run, timeout):
         if code == 0:
             run.command('reload', ['eject', '-t', device], check=False)
         else:
-            print('Извлечение недоступно. Носитель будет закрыт и открыт заново для чтения.', flush=True)
+            print('Ejection unavailable. The device will be closed and reopened for reading.', flush=True)
     wait_reload(run, device, timeout)
     unmount(run, device)
     _, media_text = run.command('disc-media', ['dvd+rw-mediainfo', device])
     _, toc = run.command('disc-toc', ['xorriso', '-no_rc', '-indev', device, '-toc', '-pvd_info'])
     volume = re.search(r"Volume id\s*:\s*'([^']*)'", toc)
     if 'is closed' not in toc or not volume or volume[1] != cfg['label']:
-        raise BurnError('Диск не закрыт или его метка не соответствует записанному образу.')
+        raise BurnError('Disc is not closed or its label does not match the recorded image.')
     capacity = re.search(r'READ CAPACITY:\s+(\d+)\*(\d+)=(\d+)', media_text)
     if not capacity or int(capacity[2]) != BLOCK or int(capacity[3]) < cfg['image_bytes']:
-        raise BurnError('Читаемая область диска меньше образа или размер блока не подтверждён.')
+        raise BurnError('Readable disc capacity is smaller than the image, or block size is unconfirmed.')
     image = run.path / 'image.iso'
-    digest, size = hash_image(image, 'Повторная проверка образа', cfg['image_bytes'])
+    digest, size = hash_image(image, 'Rechecking image', cfg['image_bytes'])
     if digest != cfg['image_sha256'] or size != cfg['image_bytes']:
-        raise BurnError('Сохранённый образ изменился; проверка остановлена.')
+        raise BurnError('Saved image has changed; verification stopped.')
     fd = os.open(device, os.O_RDONLY | os.O_NONBLOCK)
     try:
         os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
@@ -586,21 +586,21 @@ def verify_disc(run, timeout):
                'finished': utc(), 'run_directory': str(run.path)}
     save(run.path / 'result.json', summary)
     (run.path / 'REPORT.txt').write_text(
-        f"УСПЕХ: {cfg['label']}\nФайлов: {summary['files']}; байт: {summary['bytes']}\n"
-        'Все файлы полностью прочитаны с оптического диска, размеры/имена/SHA-256 совпали.\n'
-        'Rock Ridge и Joliet проверены, пропущенных и лишних файлов/папок нет.\n'
-        f"Скорость записи: {cfg['speed']}x. Предварительное форматирование не выполнялось.\n"
-        f"Образ: {image}\nSHA-256: {cfg['image_sha256']}\n"
-        'Манифест и итоговые отчёты сохранены. Исходники не изменялись.\n', encoding='utf-8')
+        f"SUCCESS: {cfg['label']}\nFiles: {summary['files']}; bytes: {summary['bytes']}\n"
+        'All files fully read from the optical disc; sizes, names and SHA-256 hashes match.\n'
+        'Rock Ridge and Joliet verified; no missing or extra files or directories.\n'
+        f"Write speed: {cfg['speed']}x. No preformatting was performed.\n"
+        f"Image: {image}\nSHA-256: {cfg['image_sha256']}\n"
+        'Manifest and final reports retained. Source files were not modified.\n', encoding='utf-8')
     cleanup_verified(run)
-    print(f"\nУСПЕХ: {summary['files']} файлов, {summary['bytes']:,} байт. Ошибок: 0. Отчёт: {run.path / 'REPORT.txt'}", flush=True)
+    print(f"\nSUCCESS: {summary['files']} files, {summary['bytes']:,} bytes. Errors: 0. Report: {run.path / 'REPORT.txt'}", flush=True)
 
 
 def prepare_and_burn(args, run, identity):
     source = Path(args.source).expanduser().resolve(strict=True)
     label = validate_label(args.label)
     if not source.is_dir():
-        raise BurnError('Исходный путь должен быть папкой.')
+        raise BurnError('Source path must be a directory.')
     run.phase('diagnostics', source=str(source), label=label, started=utc())
     capture_kernel(run, 'kernel-before')
     medium = probe_blank(run, identity['device'], 'media-before')
@@ -608,28 +608,28 @@ def prepare_and_burn(args, run, identity):
     save(run.path / 'inventory.json', inventory)
     size = image_size(run, source, label)
     margin = check_capacity(size, medium['free_blocks'])
-    print(f'Образ: {size:,} байт. Доступно: {medium["free_blocks"] * BLOCK:,}. '
-          f'Запас после образа и резерва: {margin:,}. Без форматирования.', flush=True)
+    print(f'Image: {size:,} bytes. Available: {medium["free_blocks"] * BLOCK:,}. '
+          f'Space remaining after image and reserve: {margin:,}. No preformatting.', flush=True)
     if args.check_only:
         run.phase('checked', image_bytes=size, available_bytes=medium['free_blocks'] * BLOCK)
-        print('Проверка вместимости пройдена. Образ не создавался, запись не запускалась.', flush=True)
+        print('Capacity check passed. No image created and no writing started.', flush=True)
         return
     if shutil.disk_usage(run.path).free < size + GIB:
-        raise BurnError(f'Недостаточно места на SSD/HDD: нужно минимум {size + GIB:,} байт.')
+        raise BurnError(f'Insufficient SSD/HDD space: at least {size + GIB:,} bytes required.')
     speed = select_speed(medium['speeds'], args.speed)
     manifest = make_manifest(source, inventory)
     save(run.path / 'manifest.json', manifest)
     image = run.path / 'image.iso'
     run.phase('building_image')
-    print(f'Создание проверяемого образа: {image}', flush=True)
+    print(f'Creating image for verification: {image}', flush=True)
     run.command('build-image', iso_args(source, label) + ['-o', str(image), str(source)])
     if image.stat().st_size != size or snapshot(source) != inventory:
-        raise BurnError('Исходники или размер образа изменились при подготовке.')
+        raise BurnError('Source files or image size changed during preparation.')
     run.phase('verifying_image')
     verify_iso(run, image, manifest, 'image')
-    digest, count = hash_image(image, 'SHA-256 образа', size)
+    digest, count = hash_image(image, 'Image SHA-256', size)
     if count != size:
-        raise BurnError('Неполное чтение образа.')
+        raise BurnError('Incomplete image read.')
     config = {'source': str(source), 'label': label, 'identity': identity,
               'medium': medium, 'speed': speed, 'image_bytes': size, 'image_sha256': digest,
               'program_sha256': hash_file(Path(__file__).resolve())[0]}
@@ -637,38 +637,38 @@ def prepare_and_burn(args, run, identity):
     (run.path / 'image.iso.sha256').write_text(digest + '  image.iso\n', encoding='ascii')
     run.phase('prepared')
     if args.prepare_only:
-        print(f'Образ готов и проверен. Запись не запускалась. {run.path}', flush=True)
+        print(f'Image prepared and verified. No writing started. {run.path}', flush=True)
         return
     if not args.yes:
-        answer = input(f'Записать {label} на {identity["device"]} со скоростью {speed:g}x? [да/нет]: ')
-        if answer.strip().lower() not in ['да', 'yes', 'y']:
-            raise BurnError('Запись отменена пользователем; подготовленные файлы сохранены.')
+        answer = input(f'Write {label} to {identity["device"]} at {speed:g}x? [yes/no]: ')
+        if answer.strip().lower() not in ['yes', 'y']:
+            raise BurnError('Writing cancelled by user; prepared files retained.')
     if drive_identity(identity['device']) != identity:
-        raise BurnError('Привод изменился после подготовки.')
+        raise BurnError('Drive changed after preparation.')
     current = probe_blank(run, identity['device'], 'prewrite-media')
     if current != medium:
-        raise BurnError('Носитель/его параметры изменились после подготовки.')
+        raise BurnError('Media or its parameters changed after preparation.')
     check_capacity(size, current['free_blocks'])
     if snapshot(source) != inventory:
-        raise BurnError('Исходники изменились после проверки образа.')
+        raise BurnError('Source files changed after image verification.')
     burn(run, identity['device'], image, speed)
     verify_disc(run, args.reload_timeout)
 
 
 def parser():
-    p = argparse.ArgumentParser(description='Безопасная запись пустой BD-R и полная SHA-256 проверка.')
-    p.add_argument('--source', help='Исходная папка; иначе интерактивный запрос')
-    p.add_argument('--label', help='Метка A-Z/0-9/_, до 32 символов; иначе запрос')
-    p.add_argument('--device', help='Оптический /dev/srN; один привод выбирается автоматически')
+    p = argparse.ArgumentParser(description='Safe blank BD-R recording with full SHA-256 verification.')
+    p.add_argument('--source', help='Source directory; prompted interactively if omitted')
+    p.add_argument('--label', help='Label: A-Z/0-9/_, up to 32 characters; prompted if omitted')
+    p.add_argument('--device', help='Optical /dev/srN; a single drive is selected automatically')
     p.add_argument('--work-dir', default=str(Path.home() / '.local/state/m-burner/runs'))
-    p.add_argument('--protect-root', action='append', default=[], help='Дополнительное дерево, куда нельзя писать артефакты')
-    p.add_argument('--speed', type=float, help='Поддерживаемая скорость; по умолчанию предпочитается 4x')
-    p.add_argument('--yes', action='store_true', help='Без вопроса перед записью; все проверки остаются обязательными')
+    p.add_argument('--protect-root', action='append', default=[], help='Additional directory tree protected from artifact writes')
+    p.add_argument('--speed', type=float, help='Supported write speed; 4x preferred by default')
+    p.add_argument('--yes', action='store_true', help='Skip write confirmation; all safety checks remain mandatory')
     mode = p.add_mutually_exclusive_group()
-    mode.add_argument('--prepare-only', action='store_true', help='Подготовить и проверить образ, не записывать')
-    mode.add_argument('--check-only', action='store_true', help='Проверить носитель и вместимость, не создавать образ')
-    p.add_argument('--resume', type=Path, help='Продолжить ТОЛЬКО проверку ранее записанного диска')
-    p.add_argument('--reload-timeout', type=int, default=300, help='Сколько секунд ждать ручного закрытия лотка')
+    mode.add_argument('--prepare-only', action='store_true', help='Prepare and verify an image without recording')
+    mode.add_argument('--check-only', action='store_true', help='Check media and capacity without creating an image')
+    p.add_argument('--resume', type=Path, help='Resume verification ONLY of a previously recorded disc')
+    p.add_argument('--reload-timeout', type=int, default=300, help='Seconds to wait for the tray to be closed manually')
     return p
 
 
@@ -677,19 +677,19 @@ def main(argv=None):
     run, lock = None, None
     try:
         if os.geteuid() == 0:
-            raise BurnError('Через sudo запускается только install.sh. Сам m-burner запускайте обычным пользователем.')
+            raise BurnError('Use sudo only for install.sh. Run m-burner as a regular user.')
         if args.reload_timeout < 0:
-            raise BurnError('reload-timeout не может быть отрицательным.')
+            raise BurnError('reload-timeout must not be negative.')
         for tool in ['xorriso', 'dvd+rw-mediainfo', 'eject', 'udisksctl', 'findmnt', 'journalctl']:
             if not shutil.which(tool):
-                raise BurnError(f'Не найден {tool}. Выполните sudo bash install.sh.')
+                raise BurnError(f'{tool} not found. Run sudo bash install.sh.')
         try:
             import pycdlib  # noqa: F401
         except ImportError:
-            raise BurnError('Не установлен pycdlib. Выполните sudo bash install.sh.') from None
+            raise BurnError('pycdlib is not installed. Run sudo bash install.sh.') from None
         if args.resume:
             if args.source or args.label or args.device or args.prepare_only or args.check_only:
-                raise BurnError('--resume нельзя сочетать с выбором новой папки/метки/привода или режимом подготовки.')
+                raise BurnError('--resume cannot be combined with a new source, label, device or preparation mode.')
             directory = args.resume.expanduser().resolve(strict=True)
             saved_state = load(directory / 'state.json')
             if saved_state.get('phase') == 'verified' and saved_state.get('cleanup_started'):
@@ -698,8 +698,8 @@ def main(argv=None):
                 validate_workdir(directory, Path(cfg['source']), args.protect_root)
                 if not saved_state.get('cleanup_complete'):
                     cleanup_verified(run)
-                print('Этот диск уже полностью проверен. '
-                      f'Отчёт: {directory / "REPORT.txt"}', flush=True)
+                print('This disc has already been fully verified. '
+                      f'Report: {directory / "REPORT.txt"}', flush=True)
                 return 0 if run.state.get('cleanup_complete') else 1
             run = Run(directory)
             cfg = load(directory / 'config.json')
@@ -707,17 +707,17 @@ def main(argv=None):
             identity = drive_identity(cfg['identity']['device'])
             lock = lock_drive(identity['device'])
             if run.state.get('phase') not in ['written', 'awaiting_reload', 'verifying', 'verification_failed', 'verified']:
-                raise BurnError('Этот запуск не дошёл до успешной записи; --resume никогда не пишет диск.')
+                raise BurnError('This run did not reach a successful write; --resume never writes to disc.')
             verify_disc(run, args.reload_timeout)
         else:
-            args.source = args.source or input('Какую папку записать: ').strip()
-            args.label = args.label or input('Метка диска (например KATYAS_DISK4): ').strip()
+            args.source = args.source or input('Source directory to record: ').strip()
+            args.label = args.label or input('Disc label (for example BACKUP_001): ').strip()
             source = Path(args.source).expanduser().resolve(strict=True)
             validate_label(args.label)
             if not args.device:
                 devices = sorted(Path('/sys/class/block').glob('sr*'))
                 if len(devices) != 1:
-                    raise BurnError('Не найден единственный оптический привод; укажите --device /dev/srN.')
+                    raise BurnError('Could not select a single optical drive; specify --device /dev/srN.')
                 args.device = '/dev/' + devices[0].name
             identity = drive_identity(args.device)
             lock = lock_drive(identity['device'])
@@ -725,7 +725,7 @@ def main(argv=None):
             work.mkdir(parents=True, exist_ok=True)
             directory = Path(tempfile.mkdtemp(prefix=datetime.now().strftime('%Y%m%d-%H%M%S-') + args.label + '-', dir=work))
             run = Run(directory)
-            print(f'Артефакты: {directory}', flush=True)
+            print(f'Artifacts: {directory}', flush=True)
             prepare_and_burn(args, run, identity)
         return 0
     except AwaitingReload as error:
@@ -733,8 +733,8 @@ def main(argv=None):
         return 75
     except (Exception, KeyboardInterrupt) as error:
         if run and run.state.get('phase') == 'verified' and run.state.get('cleanup_started'):
-            print(f'Диск полностью проверен, но очистка не завершена: {error}. '
-                  f'Повторить очистку: m-burner --resume {run.path}', file=sys.stderr, flush=True)
+            print(f'Disc fully verified, but cleanup is incomplete: {error}. '
+                  f'Retry cleanup: m-burner --resume {run.path}', file=sys.stderr, flush=True)
             return 1
         if run:
             old = run.state.get('phase')
@@ -743,9 +743,9 @@ def main(argv=None):
             save(run.path / 'error.json', {'time': utc(), 'error': str(error), 'type': type(error).__name__})
             save(run.path / 'result.json', {'success': False, 'error': str(error), 'time': utc()})
             (run.path / 'REPORT.txt').write_text(
-                f'УСПЕХ НЕ ПОДТВЕРЖДЁН\nСостояние: {run.state.get("phase")}\nОшибка: {error}\n'
-                'Автоматическая повторная запись не выполнялась. Артефакты сохранены.\n', encoding='utf-8')
-        print(f'\nСТОП: {error}\nЗапись не повторяется автоматически. Все артефакты сохранены.', file=sys.stderr, flush=True)
+                f'SUCCESS NOT CONFIRMED\nState: {run.state.get("phase")}\nError: {error}\n'
+                'No automatic rewriting was performed. Artifacts retained.\n', encoding='utf-8')
+        print(f'\nSTOP: {error}\nWriting is not retried automatically. All artifacts retained.', file=sys.stderr, flush=True)
         return 1
     finally:
         if lock is not None:

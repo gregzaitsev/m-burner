@@ -64,7 +64,7 @@ class SafetyTests(unittest.TestCase):
             burner.select_speed([2, 4], 6)
 
     def test_label_cannot_be_option_or_shell_code(self):
-        for label in ['-x', 'x; touch /tmp/foo', 'a' * 33, 'Имя', '']:
+        for label in ['-x', 'x; touch /tmp/foo', 'a' * 33, 'étiquette', '']:
             with self.assertRaises(burner.BurnError):
                 burner.validate_label(label)
         self.assertEqual(burner.validate_label('KATYAS_DISK4'), 'KATYAS_DISK4')
@@ -288,9 +288,9 @@ class ImageTests(unittest.TestCase):
         return image, manifest
 
     def test_exact_names_hidden_empty_unicode_and_special_characters(self):
-        (self.source / 'Папка с пробелами').mkdir()
+        (self.source / '写真 with spaces').mkdir()
         (self.source / 'empty directory').mkdir()
-        names = ['.hidden', 'Папка с пробелами/фото №1.jpg', "quotes' $(noexec).txt", '`backtick`.txt']
+        names = ['.hidden', '写真 with spaces/photo №1.jpg', "quotes' $(noexec).txt", '`backtick`.txt']
         for i, name in enumerate(names):
             (self.source / name).write_bytes(bytes([i]) * (2049 + i))
         (self.source / 'zero').touch()
