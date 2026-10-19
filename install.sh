@@ -59,4 +59,8 @@ set -euo pipefail
 exec /opt/m-burner/venv/bin/python /opt/m-burner/m_burner.py "$@"
 EOF
 install -m 0755 "$dest/launcher" /usr/local/bin/m-burner
-printf '\nRun:\n  m-burner\n'
+cat <<'EOF'
+
+Record and verify a directory (replace the source path and label):
+  m-burner --source '/path/to/files' --label BACKUP_001 --device /dev/sr0 --yes
+EOF
