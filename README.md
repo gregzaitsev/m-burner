@@ -1,4 +1,4 @@
-> ⚠️ 100% vibecoded, 100% manually tested
+> ⚠️ 100% vibecoded, manually tested, but not obsessively
 
 # m-burner
 
