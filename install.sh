@@ -59,5 +59,4 @@ set -euo pipefail
 exec /opt/m-burner/venv/bin/python /opt/m-burner/m_burner.py "$@"
 EOF
 install -m 0755 "$dest/launcher" /usr/local/bin/m-burner
-echo 'Done. Run m-burner as a regular user, NOT through sudo.'
-echo 'Your user needs read/write access to the optical device /dev/srN.'
+printf '\nRun:\n  m-burner\n'
